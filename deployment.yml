@@ -1,0 +1,89 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: rabbitmq-pod-autoscaler
+rules:
+  - apiGroups: ["*"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "update"]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: rabbitmq-pod-autoscaler
+  namespace: kube-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: rabbitmq-pod-autoscaler
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: rabbitmq-pod-autoscaler
+subjects:
+- kind: ServiceAccount
+  name: rabbitmq-pod-autoscaler
+  namespace: kube-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: rabbitmq-pod-autoscaler
+  name: rabbitmq-pod-autoscaler
+  namespace: kube-system
+spec:
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 10
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rabbitmq-pod-autoscaler
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: rabbitmq-pod-autoscaler
+    spec:
+      serviceAccountName: rabbitmq-pod-autoscaler
+      containers:
+      - env:
+          - name: INTERVAL
+            value: "30"
+          - name: RABBIT_HOST
+            value: "https://example.cloudamqp.com"
+          - name: RABBIT_USER
+            valueFrom:
+              secretKeyRef:
+                name: rabbitmq-pod-autoscaler
+                key: rabbitmq-user
+          - name: RABBIT_PASS
+            valueFrom:
+              secretKeyRef:
+                name: rabbitmq-pod-autoscaler
+                key: rabbitmq-pass
+          - name: AUTOSCALING
+            value: >
+              3|10|1|kubernetes-namespace|kubernetes-deployment|rabbitmq-vhost|rabbitmq-queue;
+              3|10|1|kubernetes-namespace|kubernetes-deployment|rabbitmq-vhost|rabbitmq-queue;
+              3|10|1|kubernetes-namespace|kubernetes-deployment|rabbitmq-vhost|rabbitmq-queue
+          - name: LOGS
+            value: HIGH
+        name: rabbitmq-pod-autoscaler
+        image: 'registry-intl.example.aliyuncs.com/example/k8s-rabbitmq-pod-autoscaler:latest'
+        imagePullPolicy: Always
+        resources:
+          requests:
+            cpu: 100m
+            memory: 50Mi
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
